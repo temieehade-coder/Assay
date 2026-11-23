@@ -305,3 +305,31 @@ func TestIssuerWithoutAccountKeepsTheAssetRecordFlags(t *testing.T) {
 		t.Fatalf("evidence entries = %d, want 1: there is only one source to cite", len(f.Evidence))
 	}
 }
+
+// TestMergedIssuerIsUndetermined covers issue #360: when the issuer account
+// returns 404 (most likely merged), the scan sets IssuerMissing and the
+// capability finding must be undetermined rather than clear. A missing account
+// is never a safe bill of health: the asset record may still carry dangerous
+// flags, and "data is missing" must not read the same as "the issuer has no power".
+func TestMergedIssuerIsUndetermined(t *testing.T) {
+	s := loadDisagreement(t)
+	// Simulate the merged-account state: Issuer is nil and IssuerMissing is set,
+	// which is exactly what scan.go sets when Horizon returns 404.
+	s.Issuer = nil
+	s.IssuerMissing = true
+
+	f := capFinding(t, runEngine(t, s))
+
+	if !f.Undetermined {
+		t.Fatal("a merged issuer (IssuerMissing=true) must mark the capability finding undetermined")
+	}
+	if f.Severity != mechanics.Unevaluated {
+		t.Fatalf("severity = %v, want Unevaluated; a missing issuer account is not a clear", f.Severity)
+	}
+	if strings.Contains(strings.ToLower(f.Reasoning), "clear") {
+		t.Fatalf("reasoning must not claim 'clear' for a merged issuer:\n%s", f.Reasoning)
+	}
+	if !strings.Contains(f.Reasoning, "404") {
+		t.Fatalf("reasoning must mention the 404 so the reader knows why the check is undetermined:\n%s", f.Reasoning)
+	}
+}

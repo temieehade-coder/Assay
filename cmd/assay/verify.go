@@ -61,14 +61,15 @@ const (
 )
 
 // OnChainSafety mirrors the registry's get_safety return: the stored
-// attestation for one asset, now including the preimage version so a
-// verifier does not have to guess which encoding produced the hash.
+// attestation for one asset. The on-chain record does not store a preimage
+// version — that information is not available from the chain, and reporting a
+// zero default would be misleading. The encoding used by the local scan is
+// reported on the local side (LocalSide.Encoding).
 type OnChainSafety struct {
-	Severity        uint32 `json:"severity"`
-	Flags           uint32 `json:"flags"`
-	EvidenceHash    string `json:"evidence_hash"`
-	AttestedAt      int64  `json:"attested_at"`
-	PreimageVersion uint32 `json:"preimage_version"`
+	Severity     uint32 `json:"severity"`
+	Flags        uint32 `json:"flags"`
+	EvidenceHash string `json:"evidence_hash"`
+	AttestedAt   int64  `json:"attested_at"`
 }
 
 // registryReader reads the on-chain attestation for one asset. It is an
@@ -368,8 +369,8 @@ func writeVerifyResult(w io.Writer, res *VerifyResult, asJSON bool) error {
 				res.Local.Severity, res.Local.Flags, res.Local.EvidenceHash)
 		}
 		if res.Chain != nil {
-			_, _ = fmt.Fprintf(w, "chain: severity=%d flags=%d evidence_hash=%s attested_at=%d preimage_version=%d\n",
-				res.Chain.Severity, res.Chain.Flags, res.Chain.EvidenceHash, res.Chain.AttestedAt, res.Chain.PreimageVersion)
+			_, _ = fmt.Fprintf(w, "chain: severity=%d flags=%d evidence_hash=%s attested_at=%d\n",
+				res.Chain.Severity, res.Chain.Flags, res.Chain.EvidenceHash, res.Chain.AttestedAt)
 		}
 	}
 	if res.Differential != nil {

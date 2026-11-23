@@ -82,6 +82,14 @@ not a live capture, because no disagreeing asset has ever been observed.
 existing holder is exposed (clawback is inherited at trustline creation, so this
 answers the prospective question only); or anything about who the issuer is.
 
+**Merged issuer (HTTP 404 on the issuer account).** When the issuer's `/accounts`
+record returns 404, the account has likely been merged. A merged account cannot
+change flags or exercise clawback, but the capability finding is **unevaluated**
+rather than clear: a missing account record is not a safe bill of health.
+The asset stat record may still carry a copy of the last-known flags, but
+reporting those without the cross-check that `reconcileFlags` provides would be
+misleading. The report is undetermined and non-attestable when this occurs.
+
 ## `mutability`
 
 **Concludes:** whether the issuer's authorization flag set can still change.
@@ -100,11 +108,14 @@ number. There are three states, each with its own reasoning:
   given up, because `AUTH_IMMUTABLE_FLAG` cannot be cleared once set (CAP-0035
   makes all `AUTH_*` flags read-only). Locking does not make the power safer; it
   removes any future in which the issuer relinquishes it.
-- **Not locked** — the issuer may add freeze or confiscation later. Under
-  CAP-0035 a flag added later does not reach trustlines that already exist, but
-  it applies to any trustline opened after the change. This is the state a
-  prospective holder wants surfaced, because it is the one where today's `clear`
-  is not a durable answer.
+- **Not locked** — the issuer may add `auth_revocable` or `auth_clawback_enabled`
+  later. A later `auth_revocable` reaches every existing holder immediately —
+  it is read from the issuer account when a freeze is applied, not baked into
+  the trustline. A later `auth_clawback_enabled` applies only to trustlines
+  opened after the change: CAP-0035 sets `is_clawback_enabled` on the trustline
+  at creation, so an existing holder is not retroactively exposed to clawback.
+  This is the state a prospective holder wants surfaced, because it is the one
+  where today's `clear` is not a durable answer.
 
 **Flag source.** The check reads the issuer flags from the same Horizon
 `/assets` record the `capability` check derives severity from, so the two

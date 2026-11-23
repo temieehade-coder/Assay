@@ -132,9 +132,13 @@ func (c ReputationCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	// They never escalate, but they are recorded so the vocabulary can be
 	// extended deliberately rather than an adverse tag being silently missed.
 	var unrecognised []string
+	// failedSources records machine-readable source IDs for undetermined
+	// findings, in encounter order. The first entry becomes UndeterminedSource.
+	var failedSources []string
 
 	if s.DirectoryErr != "" {
 		unreachable = append(unreachable, "the curated directory")
+		failedSources = append(failedSources, "stellar.expert/directory")
 		f.Evidence = append(f.Evidence, Evidence{
 			Source: "stellar.expert/directory",
 			URL:    s.DirectoryURL,
@@ -155,8 +159,10 @@ func (c ReputationCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	}
 	if blockedSkipped != "" {
 		unasked = append(unasked, "the malicious-domain blocklist ("+blockedSkipped+")")
+		failedSources = append(failedSources, "stellar.expert/blocked-domains")
 	} else if s.BlockedErr != "" {
 		unreachable = append(unreachable, "the malicious-domain blocklist")
+		failedSources = append(failedSources, "stellar.expert/blocked-domains")
 		f.Evidence = append(f.Evidence, Evidence{
 			Source:      "stellar.expert/blocked-domains",
 			URL:         s.BlockedURL,
@@ -168,6 +174,7 @@ func (c ReputationCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 
 	if s.ExpertAssetErr != "" {
 		unreachable = append(unreachable, "the asset metadata")
+		failedSources = append(failedSources, "StellarExpert")
 		f.Evidence = append(f.Evidence, Evidence{
 			Source: "StellarExpert",
 			URL:    s.ExpertAssetURL,
@@ -350,6 +357,9 @@ func (c ReputationCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	// a missing answer from a missing question.
 	if len(unreachable) > 0 || len(unasked) > 0 {
 		f.Undetermined = true
+		if len(failedSources) > 0 {
+			f.UndeterminedSource = failedSources[0]
+		}
 		var gaps []string
 		if len(unreachable) > 0 {
 			gaps = append(gaps, joinPowers(unreachable)+

@@ -38,6 +38,7 @@ func run(args []string) error {
 	strict := fs.Bool("strict", false, "with -compare, exit non-zero when anything moved")
 	confusion := fs.Bool("confusion", false, "print the confusion matrix over the labelled corpus")
 	precisionRecall := fs.Bool("precision-recall", false, "with -confusion, emit precision and recall with a sample-size caveat")
+	asJSON := fs.Bool("json", false, "emit machine-readable JSON for -confusion and -compare instead of text")
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("eval: %w", err)
 	}
@@ -64,14 +65,18 @@ func run(args []string) error {
 		fmt.Printf("recorded %d subjects under %s -> %s\n", len(rec.Subjects), rec.Version, *out)
 	}
 
+	var diff *eval.Diff
 	if *compare != "" {
 		base, err := readRecord(*compare)
 		if err != nil {
 			return err
 		}
-		diff := eval.Compare(base, rec)
-		printDiff(base, rec, diff, *compare)
-		if *strict && !diff.Empty() {
+		d := eval.Compare(base, rec)
+		diff = &d
+		if !*asJSON {
+			printDiff(base, rec, d, *compare)
+		}
+		if *strict && !d.Empty() {
 			return fmt.Errorf("classifier output moved since %s", *compare)
 		}
 	}
@@ -81,10 +86,69 @@ func run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("confusion matrix: %w", err)
 		}
-		matrix.Print(*precisionRecall)
+		if *asJSON {
+			if err := printConfusionJSON(matrix, *precisionRecall, diff); err != nil {
+				return err
+			}
+		} else {
+			matrix.Print(*precisionRecall)
+		}
+	} else if *asJSON && diff != nil {
+		// -compare -json without -confusion: emit the diff only.
+		b, err := json.MarshalIndent(diff, "", "  ")
+		if err != nil {
+			return fmt.Errorf("encode diff: %w", err)
+		}
+		fmt.Println(string(b))
 	}
 
 	return nil
+}
+
+// evalJSONOutput is the machine-readable shape emitted by -json.
+// It carries the confusion matrix fields at the top level, and optional
+// precision_recall and compare sections when the matching flags are set.
+type evalJSONOutput struct {
+	eval.ConfusionMatrix
+	PrecisionRecall *precisionRecallJSON `json:"precision_recall,omitempty"`
+	Compare         *eval.Diff           `json:"compare,omitempty"`
+}
+
+type precisionRecallJSON struct {
+	Caveat    string  `json:"caveat"`
+	Precision float64 `json:"precision,omitempty"`
+	Recall    float64 `json:"recall,omitempty"`
+}
+
+func printConfusionJSON(matrix *eval.ConfusionMatrix, withPR bool, diff *eval.Diff) error {
+	o := evalJSONOutput{ConfusionMatrix: *matrix, Compare: diff}
+	if withPR {
+		o.PrecisionRecall = computePrecisionRecall(matrix)
+	}
+	b, err := json.MarshalIndent(o, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode confusion matrix: %w", err)
+	}
+	fmt.Println(string(b))
+	return nil
+}
+
+func computePrecisionRecall(m *eval.ConfusionMatrix) *precisionRecallJSON {
+	const caveat = "WARNING: computed from a small sample; figures are illustrative only and must not be cited as evidence of classifier accuracy."
+	pr := &precisionRecallJSON{Caveat: caveat}
+	var totalAgreed, totalDisagreed, totalUndetermined int
+	for _, row := range m.SeverityRows {
+		totalAgreed += row.Agreed
+		totalDisagreed += row.Disagreed
+		totalUndetermined += row.Undetermined
+	}
+	if totalClassified := totalAgreed + totalDisagreed; totalClassified > 0 {
+		pr.Precision = float64(totalAgreed) / float64(totalClassified)
+	}
+	if totalAgreed+totalUndetermined > 0 {
+		pr.Recall = float64(totalAgreed) / float64(totalAgreed+totalUndetermined)
+	}
+	return pr
 }
 
 const staleFixtureAgeDays = 90

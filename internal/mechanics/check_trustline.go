@@ -89,7 +89,11 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	if tl.IsClawbackEnabled {
 		mech |= MechTrustlineClawbackEnabled
 	}
-	if !tl.IsAuthorized {
+	switch {
+	case !tl.IsAuthorized && tl.IsAuthorizedToMaintainLiabilities:
+		// CAP-0018 partial freeze: cannot transact, but open offers stay.
+		mech |= MechTrustlineMaintainLiabilitiesOnly
+	case !tl.IsAuthorized:
 		mech |= MechTrustlineDeauthorized
 	}
 	f.Mechanics = mech
@@ -99,8 +103,8 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 		Source: "horizon",
 		URL:    holderURL,
 		Claim: fmt.Sprintf(
-			"trustline %s-%s: is_clawback_enabled=%t is_authorized=%t",
-			tl.AssetCode, tl.AssetIssuer, tl.IsClawbackEnabled, tl.IsAuthorized,
+			"trustline %s-%s: is_clawback_enabled=%t is_authorized=%t is_authorized_to_maintain_liabilities=%t",
+			tl.AssetCode, tl.AssetIssuer, tl.IsClawbackEnabled, tl.IsAuthorized, tl.IsAuthorizedToMaintainLiabilities,
 		),
 		RetrievedAt:    NewCanonicalTime(s.HolderFetchedAt),
 		LatestLedger:   hLedger,
@@ -108,14 +112,27 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	})
 
 	switch {
+	case tl.IsClawbackEnabled && !tl.IsAuthorized && tl.IsAuthorizedToMaintainLiabilities:
+		f.Reasoning = fmt.Sprintf(
+			"Holder %s opened this trustline while auth_clawback_enabled was active on "+
+				"the issuer. Under CAP-0035, is_clawback_enabled was set on the trustline "+
+				"at creation time and cannot be cleared retroactively. The issuer can "+
+				"confiscate this holder's balance. The trustline is also in the "+
+				"CAP-0018 partial-freeze state (is_authorized_to_maintain_liabilities=true): "+
+				"the holder cannot currently send or receive this asset, but their open "+
+				"offers remain active. Severity is not affected by this finding because "+
+				"severity is issuer-level, not holder-specific.",
+			s.Holder,
+		)
 	case tl.IsClawbackEnabled && !tl.IsAuthorized:
 		f.Reasoning = fmt.Sprintf(
 			"Holder %s opened this trustline while auth_clawback_enabled was active on "+
 				"the issuer. Under CAP-0035, is_clawback_enabled was set on the trustline "+
 				"at creation time and cannot be cleared retroactively. The issuer can "+
-				"confiscate this holder's balance. The trustline is also deauthorized: the "+
-				"holder cannot currently transact. Severity is not affected by this finding "+
-				"because severity is issuer-level, not holder-specific.",
+				"confiscate this holder's balance. The trustline is also fully deauthorized: "+
+				"the holder cannot currently transact, and any open offers have been "+
+				"cancelled. Severity is not affected by this finding because severity is "+
+				"issuer-level, not holder-specific.",
 			s.Holder,
 		)
 	case tl.IsClawbackEnabled:
@@ -127,14 +144,25 @@ func (c TrustlineCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 				"because severity is issuer-level, not holder-specific.",
 			s.Holder,
 		)
+	case !tl.IsAuthorized && tl.IsAuthorizedToMaintainLiabilities:
+		f.Reasoning = fmt.Sprintf(
+			"Holder %s has a partially frozen trustline (CAP-0018, "+
+				"is_authorized_to_maintain_liabilities=true): they cannot currently send or "+
+				"receive this asset, but their open offers remain active. This is distinct "+
+				"from full deauthorization, where the issuer's SetTrustLineFlagsOp also "+
+				"cancels open offers. The trustline does not have is_clawback_enabled set. "+
+				"Severity is not affected by this finding.",
+			s.Holder,
+		)
 	case !tl.IsAuthorized:
 		f.Reasoning = fmt.Sprintf(
-			"Holder %s has a deauthorized trustline: they cannot currently send or receive "+
-				"this asset. The trustline does not have is_clawback_enabled set, so even if "+
-				"the issuer currently holds auth_clawback_enabled, clawback does not apply to "+
-				"this holder — they opened the trustline before it was enabled, or the issuer "+
-				"cleared the account flag after this trustline was created (CAP-0035 "+
-				"grandfathering). Severity is not affected by this finding.",
+			"Holder %s has a fully deauthorized trustline: they cannot currently send or "+
+				"receive this asset, and any open offers have been cancelled. The trustline "+
+				"does not have is_clawback_enabled set, so even if the issuer currently "+
+				"holds auth_clawback_enabled, clawback does not apply to this holder — they "+
+				"opened the trustline before it was enabled, or the issuer cleared the "+
+				"account flag after this trustline was created (CAP-0035 grandfathering). "+
+				"Severity is not affected by this finding.",
 			s.Holder,
 		)
 	default:

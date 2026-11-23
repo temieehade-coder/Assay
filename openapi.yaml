@@ -401,6 +401,9 @@ components:
           description: >-
             True when this check could not reach a conclusion because a source
             it depends on was unreachable — not the same as finding nothing.
+        undetermined_source:
+          type: string
+          description: The source name that caused this finding to be undetermined, when known.
         undetermined_by_source:
           type: object
           additionalProperties:

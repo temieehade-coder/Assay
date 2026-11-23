@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -282,6 +283,61 @@ func TestVerifyExitCodeMapping(t *testing.T) {
 	if exitMismatch != 1 || exitStale != 2 || exitAbsent != 3 || exitUnverifiable != 4 {
 		t.Fatalf("exit codes drifted: mismatch=%d stale=%d absent=%d unverifiable=%d",
 			exitMismatch, exitStale, exitAbsent, exitUnverifiable)
+	}
+}
+
+// TestVerifyChainSideHasNoPreimageVersion asserts that neither the JSON nor the
+// human-readable output includes a preimage_version field for the chain side.
+// The registry does not store a preimage version — reporting a zero default
+// would be a fabricated fact. The local side already carries the encoding in
+// LocalSide.Encoding; the chain side carries only what the chain actually stored.
+func TestVerifyChainSideHasNoPreimageVersion(t *testing.T) {
+	asset := mechanics.Asset{Code: verifyTestAssetCode, Issuer: verifyTestAssetIssuer}
+	rep, params := attestableReport(t, nil)
+	chain := chainFrom(params, verifyTableTime.Add(-time.Hour).Unix(), false)
+
+	res, err := verifyAsset(context.Background(), asset, 0, verifyTableTime,
+		func(context.Context, mechanics.Asset) (*mechanics.Report, *mechanics.Subject, error) {
+			return rep, nil, nil
+		},
+		func(mechanics.Asset) (*OnChainSafety, error) { return chain, nil }, "")
+	if err != nil {
+		t.Fatalf("verifyAsset: %v", err)
+	}
+	if res.Outcome != outcomeAgree {
+		t.Fatalf("unexpected outcome %s", res.Outcome)
+	}
+
+	// JSON output must not carry preimage_version on the chain side.
+	var buf bytes.Buffer
+	if err := writeVerifyResult(&buf, res, true); err != nil {
+		t.Fatalf("writeVerifyResult json: %v", err)
+	}
+	var doc map[string]interface{}
+	if err := json.Unmarshal(buf.Bytes(), &doc); err != nil {
+		t.Fatalf("unmarshal json: %v", err)
+	}
+	if chainDoc, ok := doc["chain"].(map[string]interface{}); ok {
+		if _, hasVersion := chainDoc["preimage_version"]; hasVersion {
+			t.Error("JSON chain side must not contain preimage_version: the registry does not store it")
+		}
+	}
+
+	// Human output must not contain "preimage_version" at all.
+	buf.Reset()
+	// Force the mismatch branch so the chain side is printed in human output.
+	chain2 := chainFrom(params, verifyTableTime.Add(-time.Hour).Unix(), false)
+	chain2.Severity = 99
+	res2, _ := verifyAsset(context.Background(), asset, 0, verifyTableTime,
+		func(context.Context, mechanics.Asset) (*mechanics.Report, *mechanics.Subject, error) {
+			return rep, nil, nil
+		},
+		func(mechanics.Asset) (*OnChainSafety, error) { return chain2, nil }, "")
+	if err := writeVerifyResult(&buf, res2, false); err != nil {
+		t.Fatalf("writeVerifyResult text: %v", err)
+	}
+	if strings.Contains(buf.String(), "preimage_version") {
+		t.Errorf("human output must not contain preimage_version:\n%s", buf.String())
 	}
 }
 

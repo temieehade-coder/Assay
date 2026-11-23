@@ -269,29 +269,50 @@ window.addEventListener('popstate', () => {
   if (asset) { input.value = asset; scan(); }
 });
 
+let scanController = null;
+let currentToken = 0;
+
 async function scan() {
   const asset = input.value.trim();
   if (!asset) return;
   setURL(asset);
+  if (scanController) scanController.abort();
+  scanController = new AbortController();
+  const token = ++currentToken;
   go.disabled = true;
   out.replaceChildren(note('Scanning…'));
   try {
-    const r = await fetch('/api/v1/scan?asset=' + encodeURIComponent(asset));
-    const body = await r.json();
+    const r = await fetch('/api/v1/scan?asset=' + encodeURIComponent(asset),
+      { signal: scanController.signal });
+    if (token !== currentToken) return;
+    const text = await r.text();
+    if (token !== currentToken) return;
+    let body = null;
+    try { body = JSON.parse(text); } catch (_) { }
+    const reqId = r.headers.get('X-Request-Id');
     if (!r.ok) {
-      out.replaceChildren(errorBox('Could not scan.', body.error,
-        'This is not a safety result. Assay reports only what it fetched.'));
+      const detail = (body && body.error) ? body.error :
+        'HTTP ' + r.status + (text ? ': ' + text.trim().slice(0, 200) : '');
+      out.replaceChildren(errorBox('Could not scan.', detail,
+        'This is not a safety result. Assay reports only what it fetched.', reqId));
       return;
     }
-    await render(body, r.headers.get('X-Assay-Undetermined') === 'true', asset);
+    if (!body) {
+      out.replaceChildren(errorBox('Request failed.',
+        'Response was not valid JSON (HTTP ' + r.status + ').', null, reqId));
+      return;
+    }
+    await render(body, r.headers.get('X-Assay-Undetermined') === 'true', asset, token);
   } catch (err) {
+    if (err.name === 'AbortError') return;
+    if (token !== currentToken) return;
     out.replaceChildren(errorBox('Request failed.', err.message));
   } finally {
-    go.disabled = false;
+    if (token === currentToken) go.disabled = false;
   }
 }
 
-async function render(rep, undeterminedHeader, asset) {
+async function render(rep, undeterminedHeader, asset, token) {
   const frag = document.createDocumentFragment();
 
   if (rep.stale || rep.state === 'stale') {
@@ -315,6 +336,7 @@ async function render(rep, undeterminedHeader, asset) {
   frag.append(findings(rep));
   frag.append(await historySection(asset));
 
+  if (token !== currentToken) return;
   out.replaceChildren(frag);
 }
 

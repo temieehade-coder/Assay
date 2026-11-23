@@ -21,9 +21,9 @@ import (
 //     freeze can never be added.
 //   - Locked with freeze or clawback — permanence. The power can never be given
 //     up.
-//   - Not locked — the issuer may add freeze or confiscation later. Under
-//     CAP-0035 that would not reach trustlines that already exist, but it would
-//     apply to any trustline opened after the change.
+//   - Not locked — the issuer may add auth_revocable or auth_clawback_enabled
+//     later. A later auth_revocable reaches every existing holder immediately.
+//     A later auth_clawback_enabled applies only to new trustlines (CAP-0035).
 //
 // The third case is the one a prospective holder wants surfaced, because it is
 // the one where today's clear is not a durable answer. It is stated rather than
@@ -52,9 +52,10 @@ func (MutabilityCheck) ID() string { return "mutability" }
 func (MutabilityCheck) Describe() string {
 	return "Reports whether the issuer's flag set can still change: locked with " +
 		"no dangerous flags (a durable safety property), locked with freeze or " +
-		"clawback (the power is permanent), or unlocked (the issuer may add freeze " +
-		"or confiscation later, which under CAP-0035 would not reach existing " +
-		"trustlines but would apply to ones opened after the change). Never sets " +
+		"clawback (the power is permanent), or unlocked (the issuer may add " +
+		"auth_revocable or auth_clawback_enabled later). A later auth_revocable " +
+		"reaches every existing trustline immediately; a later auth_clawback_enabled " +
+		"applies only to trustlines opened after the change (CAP-0035). Never sets " +
 		"severity: auth_immutable is not a power over holders."
 }
 
@@ -111,9 +112,13 @@ func (c MutabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 				"The issuer can %s today, and it may give that power up, or add "+
 					"another, later. ", joinPowers(powers))
 		}
-		b.WriteString("Under CAP-0035 a flag added later applies only to trustlines " +
-			"opened after the change — it does not reach a trustline that already " +
-			"exists — so this verdict is correct for a trustline opened now but is " +
+		b.WriteString("If auth_revocable is added later, the issuer can immediately " +
+			"freeze every existing holder — auth_revocable is read from the issuer " +
+			"account at the time a freeze is applied, not baked into the trustline. " +
+			"If auth_clawback_enabled is added later, it applies only to trustlines " +
+			"opened after the change: CAP-0035 sets is_clawback_enabled on the " +
+			"trustline at creation time, so an existing holder is not retroactively " +
+			"exposed. This verdict is correct for a trustline opened now but is " +
 			"not guaranteed to stay correct for one opened later. Severity is " +
 			"unchanged; mutability is reported, not scored.")
 		f.Reasoning = b.String()

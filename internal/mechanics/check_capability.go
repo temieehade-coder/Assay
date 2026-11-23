@@ -54,6 +54,25 @@ func (c CapabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 		return f, nil
 	}
 
+	if s.IssuerMissing {
+		// The issuer account returned 404 — most likely merged. A merged
+		// account cannot change flags or exercise clawback, but the asset
+		// record may still carry a copy of the last-known flags. Reporting
+		// that copy without the cross-check the reconcile step provides would
+		// be misleading in both directions: the asset stat may show flags the
+		// account never actually had (or vice versa), and reporting those as
+		// capabilities the issuer holds would be inaccurate. The finding is
+		// undetermined rather than clear, because "data is missing" must
+		// never read as "the issuer has no power".
+		f.Severity = Unevaluated
+		f.Undetermined = true
+		f.Reasoning = "The issuer account was not found on the network (HTTP 404). " +
+			"The account may have been merged. A merged account cannot change flags " +
+			"or exercise clawback, but the capability axis is unevaluated: a missing " +
+			"account record is not a safe bill of health."
+		return f, nil
+	}
+
 	// Horizon publishes the issuer's authorization flags twice: on the asset
 	// record and on the issuer account. Reading one of two available copies and
 	// never comparing them is an unforced gap in a tool whose entire output is a

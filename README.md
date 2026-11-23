@@ -122,6 +122,7 @@ Read or change the code, or review a design.
 | [docs/sessions/2026-08-10-mvp-core.md](docs/sessions/2026-08-10-mvp-core.md) | Session log: empty repo to a working scanner, eval and contract |
 | [docs/sessions/2026-08-15-testnet-deployment.md](docs/sessions/2026-08-15-testnet-deployment.md) | Session log: the contract from passing local tests to live on testnet |
 | [docs/sessions/2026-09-17-audit-and-provenance.md](docs/sessions/2026-09-17-audit-and-provenance.md) | Session log: an integrity audit of what is merged and how to reproduce it |
+| [docs/automerge.md](docs/automerge.md) | How the automerge bot works and how to opt out |
 
 ### For operators
 

@@ -143,6 +143,14 @@ const (
 	// MechTrustlineDeauthorized means the specific holder's trustline has
 	// is_authorized unset: the holder cannot currently transact.
 	MechTrustlineDeauthorized Mechanic = 1 << 7
+	// MechTrustlineMaintainLiabilitiesOnly means the holder's trustline is in
+	// the CAP-0018 partial-freeze state: is_authorized=false but
+	// is_authorized_to_maintain_liabilities=true. The holder cannot send or
+	// receive, but open offers remain active — distinct from full
+	// deauthorization (MechTrustlineDeauthorized), where offers are cancelled.
+	// This bit is outside CapabilityMask: it is a reported-only state, not an
+	// issuer power (CapabilityMask covers bits 0–2 only).
+	MechTrustlineMaintainLiabilitiesOnly Mechanic = 1 << 8
 )
 
 // CapabilityMask covers the mechanics that are issuer powers over holders:
@@ -179,6 +187,7 @@ var names = []struct {
 	{MechBlocklisted, "blocklisted"},
 	{MechTrustlineClawbackEnabled, "trustline_clawback_enabled"},
 	{MechTrustlineDeauthorized, "trustline_deauthorized"},
+	{MechTrustlineMaintainLiabilitiesOnly, "trustline_maintain_liabilities_only"},
 }
 
 // Names returns the set bits as their ledger flag names, in bit order.

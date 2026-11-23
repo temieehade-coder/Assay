@@ -2,6 +2,7 @@ package mechanics_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -116,6 +117,44 @@ func TestTrustlineDeauthorized(t *testing.T) {
 	}
 	if f.Mechanics&mechanics.MechTrustlineClawbackEnabled == 0 {
 		t.Error("MechTrustlineClawbackEnabled must be set when is_clawback_enabled=true")
+	}
+}
+
+// TestTrustlineMaintainLiabilitiesOnly covers the CAP-0018 partial-freeze state:
+// is_authorized=false but is_authorized_to_maintain_liabilities=true. The holder
+// cannot transact but open offers remain active, which is distinct from full
+// deauthorization. This state must carry its own mechanic bit, not MechTrustlineDeauthorized.
+func TestTrustlineMaintainLiabilitiesOnly(t *testing.T) {
+	tl := &horizon.TrustlineBalance{
+		AssetCode: "TESTTKN", AssetIssuer: tlTestIssuer,
+		IsAuthorized: false, IsAuthorizedToMaintainLiabilities: true, IsClawbackEnabled: false,
+	}
+	f := runTL(t, tlSubject(tlTestHolder, tl, ""))
+
+	if f.Undetermined {
+		t.Fatal("maintain-liabilities trustline must not be undetermined")
+	}
+	if f.Mechanics&mechanics.MechTrustlineMaintainLiabilitiesOnly == 0 {
+		t.Error("MechTrustlineMaintainLiabilitiesOnly must be set for a partial-freeze trustline")
+	}
+	if f.Mechanics&mechanics.MechTrustlineDeauthorized != 0 {
+		t.Error("MechTrustlineDeauthorized must not be set for maintain-liabilities (partial freeze, not full freeze)")
+	}
+	if f.Mechanics&mechanics.MechTrustlineClawbackEnabled != 0 {
+		t.Error("MechTrustlineClawbackEnabled must not be set when is_clawback_enabled=false")
+	}
+	if f.Severity != mechanics.Clear {
+		t.Errorf("trustline check must not set severity; got %v", f.Severity)
+	}
+	// The reasoning must name the CAP-0018 partial-freeze semantics so the reader
+	// knows open offers are preserved — that is the material distinction from full
+	// deauthorization.
+	if !strings.Contains(f.Reasoning, "open offers") {
+		t.Errorf("maintain-liabilities reasoning must mention open offers:\n%s", f.Reasoning)
+	}
+	// The new bit is outside CapabilityMask: it must not widen what a gate reads.
+	if mechanics.MechTrustlineMaintainLiabilitiesOnly&mechanics.CapabilityMask != 0 {
+		t.Error("MechTrustlineMaintainLiabilitiesOnly must be outside CapabilityMask")
 	}
 }
 
