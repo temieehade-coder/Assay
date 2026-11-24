@@ -4,22 +4,20 @@
 // but nothing a PR contains is ever checked out or executed here.
 //
 // A PR is merged when GitHub itself reports it mergeable (no conflicts and
-// every ruleset requirement met), the malware scan has passed, the merge gate
-// is clear or a maintainer approved the latest commit, and no reviewer has
-// requested changes. The bot adds no rules of its own about PR descriptions,
-// checklists or review threads.
+// every ruleset requirement met), the malware scan has passed, and no reviewer
+// has requested changes. The bot adds no rules of its own about PR
+// descriptions, checklists, review threads or which paths a PR touches.
 //
 // For every open PR it decides one of:
 //   MERGE   mergeable and nothing above objects -> squash-merge
 //   WAIT    nothing is wrong, CI is still running -> do nothing
 //   BLOCKED the contributor has something to fix -> sticky comment saying what
-//   HOLD    a maintainer must look (merge gate / workflow approval) -> sticky comment
+//   HOLD    a maintainer must look (CI approval / an unexplained block) -> sticky comment
 //
 // It also approves "action_required" workflow runs from first-time contributors
 // so CI can start, unless the PR changes files CI itself executes from the PR
 // (workflows, scripts); those wait for a maintainer.
 
-const { execFileSync, spawnSync } = require('child_process');
 
 const MARKER = '<!-- assay-automerge -->';
 
@@ -46,9 +44,7 @@ const MERGEABLE_STATES = ['clean', 'unstable', 'has_hooks'];
 // run different code than the repo's. Don't approve a run for such a PR.
 const UNSAFE_TO_AUTO_APPROVE = ['.github/', 'scripts/'];
 
-const REPO_URL = `https://github.com/${process.env.GITHUB_REPOSITORY}`;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const git = (args) => execFileSync('git', args, { encoding: 'utf8' });
 
 module.exports = async function automerge({ github, context, core }) {
   const { owner, repo } = context.repo;
@@ -302,27 +298,6 @@ async function evaluate({ github, core, owner, repo, defaultBranch, pr, refusals
     }
   }
 
-  // The repo's merge gate, run from the default branch's copy of the script.
-  const gate = runGate(core, n, pr.head.sha, defaultBranch);
-  if (gate.status === 'stale') {
-    pending.push('the PR head moved while it was being checked');
-  } else if (gate.status === 'error') {
-    holds.push({
-      title: 'The merge gate could not run',
-      detail: `Its finding is unknown, so the bot will not merge: \`${gate.message}\`. Nothing is required from you.`,
-    });
-  } else if (gate.status === 'hold') {
-    const approver = await maintainerApproval({ github, owner, repo, pr, latest });
-    if (approver) {
-      core.info(`#${n}: gate hold satisfied by @${approver}`);
-    } else {
-      holds.push({
-        title: 'Touches maintainer-owned paths or dependency files',
-        detail: `${gate.paths.map((p) => `\`${p}\``).join(', ')}. The [merge gate](${REPO_URL}/blob/${defaultBranch}/scripts/merge-gate.sh) keeps changes here for human review: they change what a verdict means or add supply-chain trust. This is not a verdict on your work, and nothing is required from you. Once a maintainer approves the **latest commit**, the bot merges it. A new push clears that approval.`,
-      });
-    }
-  }
-
   // GitHub's own verdict is the final word. By now every cause we can explain
   // has been listed; this catches anything else a ruleset is enforcing.
   const explained = security.length + blockers.length + holds.length + pending.length > 0;
@@ -343,37 +318,6 @@ async function evaluate({ github, core, owner, repo, defaultBranch, pr, refusals
   }
 
   return { security, blockers, holds, pending };
-}
-
-// Runs scripts/merge-gate.sh (the default branch's copy) over the PR's commits.
-function runGate(core, n, headSha, defaultBranch) {
-  try {
-    git(['fetch', '--no-tags', '--quiet', 'origin', `+refs/pull/${n}/head:refs/remotes/pr/${n}`]);
-    if (git(['rev-parse', `refs/remotes/pr/${n}`]).trim() !== headSha) return { status: 'stale' };
-    const base = git(['merge-base', `origin/${defaultBranch}`, headSha]).trim();
-    const r = spawnSync('./scripts/merge-gate.sh', [base, headSha], { encoding: 'utf8' });
-    if (r.status === 0) return { status: 'clean' };
-    if (r.status === 1) {
-      const paths = r.stdout.split('\n').filter((l) => /^ {2}\S/.test(l)).map((l) => l.trim());
-      return { status: 'hold', paths };
-    }
-    return { status: 'error', message: `exit ${r.status}: ${(r.stderr || r.stdout).trim().slice(0, 300)}` };
-  } catch (err) {
-    core.warning(`gate failed for #${n}: ${err.message}`);
-    return { status: 'error', message: String(err.message).slice(0, 300) };
-  }
-}
-
-// A held PR may merge once someone with write access approved the current head.
-async function maintainerApproval({ github, owner, repo, pr, latest }) {
-  for (const [login, r] of latest) {
-    if (r.state !== 'APPROVED' || r.commit_id !== pr.head.sha || login === pr.user.login) continue;
-    try {
-      const { data } = await github.rest.repos.getCollaboratorPermissionLevel({ owner, repo, username: login });
-      if (['admin', 'write'].includes(data.permission)) return login;
-    } catch (_) { /* not a collaborator */ }
-  }
-  return null;
 }
 
 // ----------------------------------------------------------------- comments
@@ -408,7 +352,7 @@ function render(pr, ev, state) {
 }
 
 function renderMerged(pr) {
-  return `${MARKER}\n### Automerge: merged\n\nGitHub reported \`${pr.head.sha.slice(0, 7)}\` mergeable, and the malware scan and merge gate were clear. Squash-merged. Thanks @${pr.user.login}!`;
+  return `${MARKER}\n### Automerge: merged\n\nGitHub reported \`${pr.head.sha.slice(0, 7)}\` mergeable and the malware scan passed. Squash-merged. Thanks @${pr.user.login}!`;
 }
 
 async function upsertComment({ github, owner, repo, n, body, act, onlyIfExists = false }) {

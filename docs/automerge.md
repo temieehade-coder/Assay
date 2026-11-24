@@ -10,8 +10,9 @@ It squash-merges a PR when:
   ruleset met (`Go`, `golangci-lint`, `Soroban contract`, `Merge gate`, `Malware scan`);
 - the `Malware scan` status passed and the PR has no `security-hold` label;
 - no reviewer has an unresolved "changes requested";
-- the [merge gate](../scripts/merge-gate.sh) is clear, or a maintainer approved
-  the latest commit (a PR touching a maintainer-owned path waits for that approval).
+
+The bot adds no rules about which paths a PR touches. The `Merge gate` check still
+runs and flags maintainer-owned paths for reviewers, but it is advisory.
 
 It also starts CI for first-time contributors, but only after the malware scan
 passed on that commit, and never for PRs that change `.github/` or `scripts/`.

@@ -419,7 +419,7 @@ func (s *Store) persistLocked() error {
 //
 // Version history:
 //   - v1: asset, at, mechanics, severities, accountability, undetermined flags.
-//         Evidence was not persisted; reloaded observations have an empty slice.
+//     Evidence was not persisted; reloaded observations have an empty slice.
 //   - v2: adds the evidence slice so EvidenceTransition survives a restart.
 const logVersion = 2
 
