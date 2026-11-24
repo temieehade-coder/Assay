@@ -959,6 +959,21 @@ An undeterminable network is an error, never a default, for the same reason an
 unread flag is `Unevaluated` rather than `Clear`: a guessed network name in a
 hashed field is a false attestation waiting to be written.
 
+#### Network-accurate evidence URLs and preimage versioning
+
+Horizon evidence lines cite the base URL of the Horizon instance that answered
+the scan (`Subject.HorizonURL`, falling back to `horizon.DefaultTestnetURL` on
+testnet and `horizon.DefaultURL` on pubnet). Citing testnet Horizon on testnet
+scans does not require a preimage version bump:
+- The preimage grammar (`evidence\tsource\turl\tclaim`) is unchanged.
+- Pubnet output is byte-for-byte identical: pubnet scans continue to cite
+  `https://horizon.stellar.org`, leaving existing pubnet preimage hashes and
+  golden vectors unchanged.
+- On testnet, generating the testnet Horizon URL corrects an evidence defect
+  where URLs pointed to pubnet ledgers. Because the preimage grammar already
+  accepts arbitrary valid URLs in the `url` field, verifiers require no schema
+  changes.
+
 ### Formal grammar (ABNF)
 
 The prose above states the intent; this grammar is the contract. It is

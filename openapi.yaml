@@ -278,6 +278,13 @@ paths:
     get:
       summary: Scan outcome and per-source failure counters
       description: Counters accumulated since process start.
+      parameters:
+        - in: query
+          name: format
+          schema:
+            type: string
+            enum: [prometheus]
+          description: Request format (e.g. prometheus for Prometheus text exposition format).
       responses:
         '200':
           description: A snapshot of the counters.
@@ -285,6 +292,9 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Metrics'
+            text/plain; version=0.0.4:
+              schema:
+                type: string
   /healthz:
     get:
       summary: Liveness check
@@ -529,6 +539,12 @@ components:
           description: >-
             True when this check could not reach a conclusion because a source
             it depends on was unreachable — not the same as finding nothing.
+        undetermined_source:
+          type: string
+          description: >-
+            The source (or comma-joined sources) that caused this finding to be
+            undetermined. Set explicitly by each check; never derived from
+            Reasoning text.
         undetermined_by_source:
           type: object
           additionalProperties:

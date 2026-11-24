@@ -427,9 +427,18 @@ Scan outcome and per-source failure counters accumulated since process start:
 did not answer). The counters are monotonically increasing; a scraper derives
 rates from consecutive reads.
 
+By default, the endpoint returns JSON (`application/json; charset=utf-8`).
+Clients may request the Prometheus text exposition format (version 0.0.4) by
+sending `Accept: text/plain; version=0.0.4` or the query parameter `?format=prometheus`.
+In Prometheus format (`text/plain; version=0.0.4; charset=utf-8`), counters are
+emitted as:
+
+- `assay_scan_outcomes_total{class="..."}`: scan results per outcome class (`complete`, `undetermined`, `not_found`, `upstream_failure`).
+- `assay_source_failures_total{source="..."}`: scans whose report recorded that source as not having answered.
+
 Status codes:
 
-- `200 OK`: a snapshot of the counters. Both objects are present and may be
+- `200 OK`: a snapshot of the counters. Both metric families/objects are present and may be
   empty on a fresh process.
 
 ### `GET /healthz`

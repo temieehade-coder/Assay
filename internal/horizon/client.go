@@ -23,6 +23,9 @@ import (
 // DefaultURL is the public Horizon instance for pubnet.
 const DefaultURL = "https://horizon.stellar.org"
 
+// DefaultTestnetURL is the public Horizon instance for testnet.
+const DefaultTestnetURL = "https://horizon-testnet.stellar.org"
+
 // ErrNotFound reports that Horizon has no record of the asset or account.
 var ErrNotFound = errors.New("horizon: not found")
 

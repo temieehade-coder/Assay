@@ -138,6 +138,16 @@
                      padding: .6rem; background: var(--bg); margin-top: .5rem; }
   footer { margin-top: 2.5rem; color: var(--muted); font-size: .8rem;
            border-top: 1px solid var(--line); padding-top: 1rem; }
+  .optional { font-weight: 400; color: var(--muted); }
+  .input-error { border-color: var(--critical) !important; }
+  .input-error-msg { color: var(--critical); font-size: .8rem; margin: .25rem 0 0; }
+  .trustline-card { border: 1px solid var(--accent); border-left: 4px solid var(--accent);
+                    border-radius: 8px; padding: 1rem; background: var(--panel);
+                    margin-bottom: 1rem; }
+  .trustline-card h2 { font-size: .72rem; text-transform: uppercase; letter-spacing: .09em;
+                       color: var(--accent); margin: 0 0 .5rem; font-weight: 700; }
+  .trustline-holder { font-family: ui-monospace, monospace; font-size: .8rem;
+                      color: var(--muted); margin-top: .35rem; overflow-wrap: anywhere; }
 </style>
 </head>
 <body>
@@ -150,6 +160,11 @@
       <label for="asset">Asset (CODE-ISSUER)</label>
       <input id="asset" name="asset" spellcheck="false" autocomplete="off"
              placeholder="CODE-GISSUER…">
+    </div>
+    <div class="field">
+      <label for="holder">Your account <span class="optional">(optional — G… address, 56 characters)</span></label>
+      <input id="holder" name="holder" spellcheck="false" autocomplete="off"
+             placeholder="GADDRESS… (optional)">
     </div>
     <button id="go" type="submit">Scan</button>
   </form>
@@ -172,6 +187,7 @@
 <script>
 const out = document.getElementById('out');
 const input = document.getElementById('asset');
+const holderInput = document.getElementById('holder');
 const go = document.getElementById('go');
 
 const SEV_NOTE = {
@@ -284,12 +300,17 @@ function fmtTime(value) {
 }
 
 // setURL keeps the address bar in step with the scan. A verdict is shareable as
-// a link, so every scan re-states the query it answered.
-function setURL(asset) {
+// a link, so every scan re-states the query it answered. The holder= param is
+// included when present so a deep link reproduces the full view.
+function setURL(asset, holder) {
   const url = new URL(window.location.href);
-  if (url.searchParams.get('asset') === asset) return;
   url.searchParams.set('asset', asset);
-  history.pushState({ asset: asset }, '', url);
+  if (holder) {
+    url.searchParams.set('holder', holder);
+  } else {
+    url.searchParams.delete('holder');
+  }
+  history.pushState({ asset: asset, holder: holder || '' }, '', url);
 }
 
 document.querySelectorAll('.ex').forEach(b =>
@@ -298,9 +319,28 @@ document.querySelectorAll('.ex').forEach(b =>
 document.getElementById('f').addEventListener('submit', e => { e.preventDefault(); scan(); });
 
 window.addEventListener('popstate', () => {
-  const asset = new URLSearchParams(window.location.search).get('asset');
-  if (asset) { input.value = asset; scan(); }
+  const params = new URLSearchParams(window.location.search);
+  const asset = params.get('asset');
+  const holder = params.get('holder') || '';
+  if (asset) { input.value = asset; holderInput.value = holder; scan(); }
 });
+
+// holderInputError shows or clears an error message below the holder input.
+function holderInputError(msg) {
+  let errEl = document.getElementById('holder-error');
+  if (msg) {
+    holderInput.classList.add('input-error');
+    if (!errEl) {
+      errEl = el('p', 'input-error-msg');
+      errEl.id = 'holder-error';
+      holderInput.parentNode.appendChild(errEl);
+    }
+    errEl.textContent = msg;
+  } else {
+    holderInput.classList.remove('input-error');
+    if (errEl) errEl.remove();
+  }
+}
 
 let scanController = null;
 let currentToken = 0;
@@ -308,15 +348,28 @@ let currentToken = 0;
 async function scan() {
   const asset = input.value.trim();
   if (!asset) return;
-  setURL(asset);
+  const holder = holderInput.value.trim();
+
+  // Client-side shape check: G... 56 characters. The server is authoritative.
+  if (holder && !/^G[A-Z2-7]{55}$/.test(holder)) {
+    holderInputError('Must be a G… address (G followed by 55 uppercase letters and digits 2–7).');
+    return;
+  }
+  holderInputError(null);
+
+  setURL(asset, holder);
+  // A newer scan supersedes an older one: abort the older request and ignore
+  // anything it still delivers, so a slow earlier answer cannot overwrite a
+  // later one.
   if (scanController) scanController.abort();
   scanController = new AbortController();
   const token = ++currentToken;
   go.disabled = true;
   out.replaceChildren(note('Scanning…'));
   try {
-    const r = await fetch('/api/v1/scan?asset=' + encodeURIComponent(asset),
-      { signal: scanController.signal });
+    let url = '/api/v1/scan?asset=' + encodeURIComponent(asset);
+    if (holder) url += '&holder=' + encodeURIComponent(holder);
+    const r = await fetch(url, { signal: scanController.signal });
     if (token !== currentToken) return;
     const text = await r.text();
     if (token !== currentToken) return;
@@ -324,18 +377,24 @@ async function scan() {
     try { body = JSON.parse(text); } catch (_) { }
     const reqId = r.headers.get('X-Request-Id');
     if (!r.ok) {
+      if (r.status === 400 && body && body.code === 'invalid_holder') {
+        holderInputError(body.error || 'Invalid holder address.');
+        out.replaceChildren();
+        return;
+      }
       const detail = (body && body.error) ? body.error :
         'HTTP ' + r.status + (text ? ': ' + text.trim().slice(0, 200) : '');
       out.replaceChildren(errorBox('Could not scan.', detail,
-        'This is not a safety result. Assay reports only what it fetched.', reqId));
+        'This is not a safety result. Assay reports only what it fetched.'));
       return;
     }
     if (!body) {
       out.replaceChildren(errorBox('Request failed.',
-        'Response was not valid JSON (HTTP ' + r.status + ').', null, reqId));
+        'Response was not valid JSON (HTTP ' + r.status + ').',
+        reqId ? 'Request id: ' + reqId : null));
       return;
     }
-    await render(body, r.headers.get('X-Assay-Undetermined') === 'true', asset, token);
+    await render(body, r.headers.get('X-Assay-Undetermined') === 'true', asset, holder, token);
   } catch (err) {
     if (err.name === 'AbortError') return;
     if (token !== currentToken) return;
@@ -345,7 +404,7 @@ async function scan() {
   }
 }
 
-async function render(rep, undeterminedHeader, asset, token) {
+async function render(rep, undeterminedHeader, asset, holder, token) {
   const frag = document.createDocumentFragment();
 
   if (rep.stale || rep.state === 'stale') {
@@ -358,6 +417,8 @@ async function render(rep, undeterminedHeader, asset, token) {
 
   const degraded = isUndetermined(rep, undeterminedHeader);
   if (degraded) frag.append(degradedPanel(rep));
+
+  if (holder) frag.append(trustlineCard(rep, holder));
 
   if (rep.network) frag.append(networkPanel(rep.network));
   if (Array.isArray(rep.clock_skews) && rep.clock_skews.length) {
@@ -377,6 +438,22 @@ async function render(rep, undeterminedHeader, asset, token) {
 
   if (token !== currentToken) return;
   out.replaceChildren(frag);
+}
+
+// trustlineCard renders the trustline finding prominently above issuer findings.
+// When no trustline finding exists, it says so plainly.
+function trustlineCard(rep, holder) {
+  const card = el('section', 'trustline-card');
+  card.append(el('h2', null, 'Holder trustline'));
+  card.append(el('div', 'trustline-holder', 'Account: ' + String(holder)));
+
+  const list = (rep.findings || []).filter(f => f.check === 'trustline');
+  if (!list.length) {
+    card.append(el('p', 'note', 'No trustline finding returned for this holder.'));
+    return card;
+  }
+  for (const f of list) card.append(finding(f));
+  return card;
 }
 
 function networkPanel(network) {
@@ -680,8 +757,10 @@ function transitionNode(t) {
 }
 
 (function init() {
-  const asset = new URLSearchParams(window.location.search).get('asset');
-  if (asset) { input.value = asset; scan(); }
+  const params = new URLSearchParams(window.location.search);
+  const asset = params.get('asset');
+  const holder = params.get('holder') || '';
+  if (asset) { input.value = asset; holderInput.value = holder; scan(); }
 })();
 </script>
 </body>

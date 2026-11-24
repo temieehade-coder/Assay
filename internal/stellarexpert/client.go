@@ -346,9 +346,24 @@ func (c *Client) BlockedDomainURL(domain string) string {
 	return c.BaseURL + "/explorer/directory/blocked-domains/" + url.PathEscape(domain)
 }
 
-// AssetURL returns the public URL for an asset metadata lookup.
+// AssetURL returns the pubnet URL for an asset metadata lookup.
 func (c *Client) AssetURL(code, issuer string) string {
 	return c.BaseURL + "/explorer/public/asset/" + url.PathEscape(code+"-"+issuer)
+}
+
+// testnetPassphrase is the SDF testnet network passphrase, used to pick the
+// correct StellarExpert explorer path without importing the horizon package.
+const testnetPassphrase = "Test SDF Network ; September 2015"
+
+// AssetURLForNetwork returns the StellarExpert URL for asset metadata on the
+// network identified by its passphrase. It uses the testnet path for the SDF
+// testnet and the public path for every other passphrase.
+func (c *Client) AssetURLForNetwork(code, issuer, networkPassphrase string) string {
+	seg := "public"
+	if networkPassphrase == testnetPassphrase {
+		seg = "testnet"
+	}
+	return c.BaseURL + "/explorer/" + seg + "/asset/" + url.PathEscape(code+"-"+issuer)
 }
 
 // Directory looks up an address in the curated directory.

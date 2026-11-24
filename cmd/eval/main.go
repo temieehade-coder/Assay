@@ -24,13 +24,13 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:]); err != nil {
+	if err := run(os.Args[1:], os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "eval:", err)
 		os.Exit(1)
 	}
 }
 
-func run(args []string) error {
+func run(args []string, stdout io.Writer) error {
 	fs := flag.NewFlagSet("eval", flag.ContinueOnError)
 	fixtures := fs.String("fixtures", "internal/mechanics/testdata", "corpus fixture root")
 	out := fs.String("out", "", "write a run record to this file")
@@ -54,7 +54,7 @@ func run(args []string) error {
 	if err != nil {
 		return fmt.Errorf("eval: %w", err)
 	}
-	if err := printFixtureAges(os.Stdout, rec, captureDates, time.Now().UTC()); err != nil {
+	if err := printFixtureAges(stdout, rec, captureDates, time.Now().UTC()); err != nil {
 		return err
 	}
 
@@ -62,7 +62,7 @@ func run(args []string) error {
 		if err := writeRecord(*out, rec); err != nil {
 			return err
 		}
-		fmt.Printf("recorded %d subjects under %s -> %s\n", len(rec.Subjects), rec.Version, *out)
+		_, _ = fmt.Fprintf(stdout, "recorded %d subjects under %s -> %s\n", len(rec.Subjects), rec.Version, *out)
 	}
 
 	var diff *eval.Diff
@@ -74,7 +74,7 @@ func run(args []string) error {
 		d := eval.Compare(base, rec)
 		diff = &d
 		if !*asJSON {
-			printDiff(base, rec, d, *compare)
+			printDiff(stdout, base, rec, d, *compare)
 		}
 		if *strict && !d.Empty() {
 			return fmt.Errorf("classifier output moved since %s", *compare)
@@ -87,11 +87,11 @@ func run(args []string) error {
 			return fmt.Errorf("confusion matrix: %w", err)
 		}
 		if *asJSON {
-			if err := printConfusionJSON(matrix, *precisionRecall, diff); err != nil {
+			if err := printConfusionJSON(stdout, matrix, *precisionRecall, diff); err != nil {
 				return err
 			}
 		} else {
-			matrix.Print(*precisionRecall)
+			matrix.PrintTo(stdout, *precisionRecall)
 		}
 	} else if *asJSON && diff != nil {
 		// -compare -json without -confusion: emit the diff only.
@@ -99,7 +99,7 @@ func run(args []string) error {
 		if err != nil {
 			return fmt.Errorf("encode diff: %w", err)
 		}
-		fmt.Println(string(b))
+		_, _ = fmt.Fprintln(stdout, string(b))
 	}
 
 	return nil
@@ -120,7 +120,7 @@ type precisionRecallJSON struct {
 	Recall    float64 `json:"recall,omitempty"`
 }
 
-func printConfusionJSON(matrix *eval.ConfusionMatrix, withPR bool, diff *eval.Diff) error {
+func printConfusionJSON(w io.Writer, matrix *eval.ConfusionMatrix, withPR bool, diff *eval.Diff) error {
 	o := evalJSONOutput{ConfusionMatrix: *matrix, Compare: diff}
 	if withPR {
 		o.PrecisionRecall = computePrecisionRecall(matrix)
@@ -129,7 +129,7 @@ func printConfusionJSON(matrix *eval.ConfusionMatrix, withPR bool, diff *eval.Di
 	if err != nil {
 		return fmt.Errorf("encode confusion matrix: %w", err)
 	}
-	fmt.Println(string(b))
+	_, _ = fmt.Fprintln(w, string(b))
 	return nil
 }
 
@@ -205,43 +205,43 @@ func readRecord(path string) (*eval.Record, error) {
 	return &rec, nil
 }
 
-func printDiff(base, current *eval.Record, diff eval.Diff, baselinePath string) {
-	fmt.Printf("eval compare: %s (%s) -> %s\n", base.Version, baselinePath, current.Version)
+func printDiff(w io.Writer, base, current *eval.Record, diff eval.Diff, baselinePath string) {
+	_, _ = fmt.Fprintf(w, "eval compare: %s (%s) -> %s\n", base.Version, baselinePath, current.Version)
 	if diff.Empty() {
-		fmt.Println("no movement: severity, mechanics and evidence are unchanged")
+		_, _ = fmt.Fprintln(w, "no movement: severity, mechanics and evidence are unchanged")
 		return
 	}
 
-	printMovements("severity", diff.SeverityMovements)
-	printMovements("mechanics", diff.MechanicsMovements)
-	printMovements("evidence", diff.EvidenceMovements)
+	printMovements(w, "severity", diff.SeverityMovements)
+	printMovements(w, "mechanics", diff.MechanicsMovements)
+	printMovements(w, "evidence", diff.EvidenceMovements)
 
 	if len(diff.Undetermined) > 0 {
-		fmt.Printf("\nundetermined (excluded from movement counts, reported separately):\n")
+		_, _ = fmt.Fprintln(w, "\nundetermined (excluded from movement counts, reported separately):")
 		for _, dir := range diff.Undetermined {
-			fmt.Printf("  %s\n", dir)
+			_, _ = fmt.Fprintf(w, "  %s\n", dir)
 		}
 	}
 	if len(diff.Added) > 0 {
-		fmt.Printf("\nadded to the corpus:\n")
+		_, _ = fmt.Fprintln(w, "\nadded to the corpus:")
 		for _, dir := range diff.Added {
-			fmt.Printf("  %s\n", dir)
+			_, _ = fmt.Fprintf(w, "  %s\n", dir)
 		}
 	}
 	if len(diff.Removed) > 0 {
-		fmt.Printf("\nremoved from the corpus:\n")
+		_, _ = fmt.Fprintln(w, "\nremoved from the corpus:")
 		for _, dir := range diff.Removed {
-			fmt.Printf("  %s\n", dir)
+			_, _ = fmt.Fprintf(w, "  %s\n", dir)
 		}
 	}
 }
 
-func printMovements(name string, moves []eval.Movement) {
+func printMovements(w io.Writer, name string, moves []eval.Movement) {
 	if len(moves) == 0 {
 		return
 	}
-	fmt.Printf("\n%s movements (%d):\n", name, len(moves))
+	_, _ = fmt.Fprintf(w, "\n%s movements (%d):\n", name, len(moves))
 	for _, m := range moves {
-		fmt.Printf("  %s\t%s: %s -> %s\n", m.Dir, m.Field, m.Before, m.After)
+		_, _ = fmt.Fprintf(w, "  %s\t%s: %s -> %s\n", m.Dir, m.Field, m.Before, m.After)
 	}
 }

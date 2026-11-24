@@ -78,6 +78,7 @@ func (c MutabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 
 	if s.Stat == nil {
 		f.Undetermined = true
+		f.UndeterminedSource = "horizon"
 		f.Reasoning = "The asset was not found on the ledger, so no issuer flags " +
 			"could be read. Whether the flag set can still change is unknown, " +
 			"which is not the same as unlocked and not the same as safe."
