@@ -60,10 +60,7 @@ const (
 )
 
 // OnChainSafety mirrors the registry's get_safety return: the stored
-// attestation for one asset. The on-chain record does not store a preimage
-// version — that information is not available from the chain, and reporting a
-// zero default would be misleading. The encoding used by the local scan is
-// reported on the local side (LocalSide.Encoding).
+// attestation for one asset.
 type OnChainSafety struct {
 	Severity     uint32 `json:"severity"`
 	Flags        uint32 `json:"flags"`

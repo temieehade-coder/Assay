@@ -195,10 +195,6 @@ type Finding struct {
 	// evidence of abuse does not become less true when a second source is
 	// down.
 	Undetermined bool `json:"undetermined"`
-	// UndeterminedSource is the source that caused this finding to be
-	// undetermined, set explicitly by the check at the point where it marks
-	// itself undetermined.
-	UndeterminedSource string `json:"undetermined_source,omitempty"`
 	// UndeterminedBySource records which source caused this finding to be
 	// undetermined. This distinguishes a source failing (e.g. StellarExpert
 	// unreachable) from a source being skipped (e.g. home_domain empty).
@@ -245,11 +241,11 @@ type Subject struct {
 	IssuerFetchedAt time.Time
 	// IssuerLedger is the ledger sequence Horizon reported for the /accounts query.
 	IssuerLedger int64
-	// IssuerMissing is set when Horizon returned 404 for the issuer /accounts
-	// lookup. A merged account returns 404 and cannot be fetched again: its
-	// flags are gone from the network's account view, though the asset record
-	// may still carry a copy. When set, Issuer is nil.
-	IssuerMissing bool
+	// IssuerMerged is set when the issuer account returned 404 from Horizon's
+	// /accounts endpoint, indicating the account has been merged. The asset
+	// record (Stat) may still exist. The capability check is undetermined in
+	// this case because the second copy of flags is unavailable.
+	IssuerMerged bool
 
 	// Toml is the issuer's stellar.toml if it resolved. TomlErr records why it
 	// did not, and is reported verbatim rather than being smoothed over.
@@ -832,32 +828,9 @@ func (e *Engine) Run(ctx context.Context, s *Subject) (*Report, error) {
 		rep.UndeterminedRate = fmt.Sprintf("%d/%d", undeterminedCount, totalChecks)
 	}
 
-	// Set observation window to span the actual evidence retrieval times.
-	// Non-failed evidence (Attempted == false) carry meaningful RetrievedAt
-	// values; failed fetches carry only an attempt time, so they are excluded.
-	// When no non-failed evidence is present the window collapses to ScannedAt.
-	// Both fields are kept out of the report preimage (see Report.HashBytes).
-	windowStart := s.ScannedAt
-	windowEnd := s.ScannedAt
-	windowInitialized := false
-	for _, ev := range rep.Evidence {
-		if ev.Attempted {
-			continue
-		}
-		t := time.Time(ev.RetrievedAt)
-		if t.IsZero() {
-			continue
-		}
-		if !windowInitialized || t.Before(windowStart) {
-			windowStart = t
-			windowInitialized = true
-		}
-		if t.After(windowEnd) {
-			windowEnd = t
-		}
-	}
-	rep.ObservationWindowStart = windowStart
-	rep.ObservationWindowEnd = windowEnd
+	// Set observation window: start from the scan start time, end at scanned at.
+	rep.ObservationWindowStart = s.ScannedAt
+	rep.ObservationWindowEnd = s.ScannedAt
 
 	if rep.Base > rep.Severity {
 		rep.Severity = rep.Base

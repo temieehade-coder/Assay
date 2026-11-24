@@ -104,23 +104,14 @@ func (c CapabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 		return f, nil
 	}
 
-	if s.IssuerMissing {
-		// The issuer account returned 404 — most likely merged. A merged
-		// account cannot change flags or exercise clawback, but the asset
-		// record may still carry a copy of the last-known flags. Reporting
-		// that copy without the cross-check the reconcile step provides would
-		// be misleading in both directions: the asset stat may show flags the
-		// account never actually had (or vice versa), and reporting those as
-		// capabilities the issuer holds would be inaccurate. The finding is
-		// undetermined rather than clear, because "data is missing" must
-		// never read as "the issuer has no power".
-		f.Severity = Unevaluated
+	if s.IssuerMerged {
+		// The issuer account has been merged: /accounts returned 404. The asset
+		// record is still present so the last-known flags are available, but we
+		// cannot corroborate them with the account record. Mark undetermined so
+		// the report cannot be attested — a merged issuer's flags cannot be
+		// independently verified and the report must never read as clear when the
+		// second source is unavailable.
 		f.Undetermined = true
-		f.Reasoning = "The issuer account was not found on the network (HTTP 404). " +
-			"The account may have been merged. A merged account cannot change flags " +
-			"or exercise clawback, but the capability axis is unevaluated: a missing " +
-			"account record is not a safe bill of health."
-		return f, nil
 	}
 
 	// Horizon publishes the issuer's authorization flags twice: on the asset
@@ -177,6 +168,13 @@ func (c CapabilityCheck) Run(_ context.Context, s *Subject) (Finding, error) {
 	}
 
 	var b strings.Builder
+	if s.IssuerMerged {
+		b.WriteString("The issuer account has been merged: the /accounts endpoint " +
+			"returned not found. The last-known flags from the asset record are " +
+			"reported here but cannot be corroborated with the account record. " +
+			"This check is undetermined because the second copy of flags is " +
+			"unavailable. ")
+	}
 	if disagreement != "" {
 		b.WriteString(disagreement)
 		b.WriteString(" ")

@@ -398,12 +398,11 @@ func (s *Scanner) Subject(ctx context.Context, a mechanics.Asset) (*mechanics.Su
 	cancelAcct()
 	if err != nil {
 		if errors.Is(err, horizon.ErrNotFound) {
-			// The issuer account no longer exists on the network — most likely
-			// it was merged. Record that fact without failing the scan: the
-			// asset record may still exist, and callers must not read a missing
-			// account as a clean bill of health.
-			sub.IssuerMissing = true
-			sub.IssuerFetchedAt = s.now()
+			// The issuer account has been merged: the /accounts endpoint returned
+			// 404. The asset record may still exist. Mark the subject so the
+			// capability check can report undetermined rather than treating the
+			// absence as a clean single-source read.
+			sub.IssuerMerged = true
 		} else {
 			return nil, fmt.Errorf("scan: fetch issuer account: %w", err)
 		}

@@ -243,11 +243,9 @@ type TrustlineBalance struct {
 	// IsAuthorized reports whether the issuer has authorized this trustline
 	// to transact (send and receive). An unauthorized trustline is frozen.
 	IsAuthorized bool `json:"is_authorized"`
-	// IsAuthorizedToMaintainLiabilities reports the CAP-0018 partial-freeze
-	// state: the holder cannot send or receive, but open offers remain active.
-	// This is distinct from full deauthorization, where offers are also
-	// cancelled. Horizon returns true here and false for IsAuthorized when the
-	// issuer has applied the partial freeze via SetTrustLineFlagsOp.
+	// IsAuthorizedToMaintainLiabilities reports a partial freeze state
+	// (CAP-0018): the trustline cannot send or receive but existing open offers
+	// remain active. This is a SetTrustLineFlagsOp issued by the issuer.
 	IsAuthorizedToMaintainLiabilities bool `json:"is_authorized_to_maintain_liabilities"`
 	// IsClawbackEnabled reports whether the issuer's clawback power applies
 	// to this specific trustline. Under CAP-0035 this flag is fixed when the

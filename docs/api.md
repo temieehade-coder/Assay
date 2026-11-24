@@ -136,6 +136,15 @@ Parameters:
 - `holder` (optional): a holder's `G...` account or `M...` muxed account.
   Adds the holder-trustline finding — whether the issuer can freeze or
   confiscate *this holder's* balance — to the report.
+- `max_age_secs` (optional): the oldest a reused StellarExpert reputation
+  answer (the curated directory and the domain blocklist) may be, in seconds.
+  A cached answer that old or older is re-fetched instead of reused, so
+  `max_age_secs=0` means "do not reuse" and forces a fresh fetch of both. It
+  only tightens the server's cache lifetime and never extends it; omit it to
+  keep the server default. Ledger reads are never cached and are unaffected.
+  `max_age` is accepted as an alias, and `max_age_secs` wins if both are sent.
+  A value that is not a non-negative integer is a `400` with code
+  `invalid_param`. See [caching.md](caching.md).
 
 The parameter accepts the same three spellings as the CLI — `CODE-ISSUER`,
 `CODE:ISSUER`, and a stellar.expert asset URL (percent-encoded) — and every
@@ -383,6 +392,32 @@ Status codes:
   seconds. Exposure is always rate-limited per client address because one
   request runs a full scan per asset.
 - `502 Bad Gateway`: the account's trustline list could not be fetched.
+
+### `GET /api/v1/attestation?asset=CODE-ISSUER`
+
+Scans the asset and returns the exact arguments of an on-chain `attest()`
+call, or says why the scan cannot be attested. The response schema is
+[`Attestation`](../openapi.yaml) in `openapi.yaml`.
+
+Parameters:
+
+- `asset` (required): asset code and issuer, in any of the spellings `scan`
+  accepts.
+
+A `200` response always carries `attestable`. When it is `true`, `severity`,
+`severity_name`, `flags`, `mechanics`, `checks`, `network`, `evidence_hash`,
+`scanned_at` and `preimage` are the attest arguments and the canonical bytes
+`evidence_hash` commits to. When it is `false`, `reason` and `error_kind`
+(`undetermined`, `unevaluated`, `stale`, `inconsistent`, `partial_check_set`
+or `scan_failed`) explain the refusal; an unattestable scan is not an HTTP
+error.
+
+Status codes:
+
+- `400 Bad Request`: missing or invalid `asset` (`missing_param`,
+  `invalid_asset`).
+- `404 Not Found`: asset not found on the ledger.
+- `502 Bad Gateway`: the scan could not reach its upstream sources.
 
 ### `GET /metrics`
 

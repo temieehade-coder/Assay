@@ -75,7 +75,7 @@ func TestMutabilityReportsThreeStates(t *testing.T) {
 			name:       "not locked",
 			flags:      horizon.Flags{},
 			wantLocked: false,
-			wantWords:  []string{"not locked", "may add", "CAP-0035"},
+			wantWords:  []string{"not locked", "auth_revocable", "existing", "auth_clawback_enabled", "CAP-0035"},
 		},
 	}
 
@@ -195,36 +195,6 @@ func TestLockedMechanicBitSurvivesMove(t *testing.T) {
 	rep = run(t, loadSubject(t, "xrp-clear-unlocked"))
 	if rep.Mechanics&mechanics.MechFlagsLocked != 0 {
 		t.Error("an unlocked asset must not carry the auth_immutable bit")
-	}
-}
-
-// TestMutabilityUnlockedClearNamesExistingHoldersExposedToFutureFreeze asserts
-// the corrected reasoning for the unlocked-and-clear case: a later auth_revocable
-// reaches existing holders immediately (it is read from the issuer account at
-// freeze time), so the reasoning must NOT say existing holders are safe from a
-// future freeze. A later auth_clawback_enabled still applies only to new
-// trustlines (CAP-0035), and that distinction must also appear.
-func TestMutabilityUnlockedClearNamesExistingHoldersExposedToFutureFreeze(t *testing.T) {
-	f := runMut(t, mutSubject(horizon.Flags{})) // no flags, not locked
-
-	if f.Undetermined {
-		t.Fatal("unlocked-clear must not be undetermined")
-	}
-	if !strings.Contains(f.Reasoning, "auth_revocable") {
-		t.Errorf("reasoning must name auth_revocable; got:\n%s", f.Reasoning)
-	}
-	// A later auth_revocable reaches existing holders immediately.
-	if !strings.Contains(f.Reasoning, "existing") {
-		t.Errorf("reasoning must state that a future auth_revocable reaches existing holders; got:\n%s", f.Reasoning)
-	}
-	// auth_clawback_enabled still only reaches new trustlines (CAP-0035).
-	if !strings.Contains(f.Reasoning, "auth_clawback_enabled") {
-		t.Errorf("reasoning must name auth_clawback_enabled separately; got:\n%s", f.Reasoning)
-	}
-	// The old blanket statement ("applies only to trustlines opened after the
-	// change") must NOT appear as a universal claim — it was the incorrect text.
-	if strings.Contains(f.Reasoning, "does not reach a trustline that already exists") {
-		t.Errorf("reasoning must not make the old blanket claim that a future flag never reaches existing trustlines; got:\n%s", f.Reasoning)
 	}
 }
 
